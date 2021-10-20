@@ -17,8 +17,18 @@ import java.util.Collection;
 public class MyController {
 
     @PostMapping("/upload")
-    public String upload(@RequestPart("file") MultipartFile file) {
+    public String upload(@RequestPart("meta-data") String metadata,
+                         @RequestPart("file-data") MultipartFile file) {
         System.out.println(file.getOriginalFilename());
-        return "hello";
+        System.out.println("metadata = " + metadata);
+        return "OK";
+    }
+
+    @GetMapping("/merge/{filename}/{slice}")
+    public String merge(@PathVariable("filename") String filename,
+                        @PathVariable("slice") Integer slice) {
+        System.out.println("               " + filename);
+        System.out.println("               " + slice);
+        return "OK";
     }
 }

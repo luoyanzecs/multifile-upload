@@ -5,52 +5,162 @@
     <title>文件上传</title>
   </head>
   <body>
-    <input id="upload" type="file" multiple="multiple"/>
-    <div id="uploadBtn">upload</div>
-    <div id="progress" style="display: none">0%</div>
+    <div class="container">
+      <input id="upload" type="file" multiple="multiple"/>
+      <div id="uploadBtn" class="upload-btn">upload</div>
+      <div id="progress" class="progress-container" style="display: none"></div>
+    </div>
   </body>
   <script>
+    const uploadSliceSize = 2 * 1024 * 1024
+    /**
+     *{filename : {
+     *            index: memory interrupt index of file
+     *            chunks: memory chunks for each file
+     *            file: memory file object
+     *            flag: memory pause(false) or uploading(true)
+     *            }}
+     * */
+
+    const memoryStatus = {}
+
+    function abortOrContinueUpload(filename) {
+      if (memoryStatus[filename].flag) {
+        console.log(this.currentTarget)
+        // this.currentTarget.innerText = '继续'
+      } else {
+        xhrSend(memoryStatus[filename].index, memoryStatus[filename].chunks, memoryStatus[filename].file)
+        // this.currentTarget.innerText = '中止'
+      }
+      memoryStatus[filename].flag = !memoryStatus[filename].flag
+    }
+
+    function uploadFile(file) {
+      let start = 0, size = file.size, chunks = [], percent = 0
+      while (start < size) {
+        let fileSlice = start + uploadSliceSize <= size ? file.slice(start, start + uploadSliceSize) : file.slice(start, size)
+        chunks.push(fileSlice)
+        start += uploadSliceSize
+      }
+      memoryStatus[file.name].chunks = chunks
+      memoryStatus[file.name].file = file
+      memoryStatus[file.name].flag = true
+      let node = document.createElement('div')
+      node.innerHTML = `<div id="${file.name}" class="progress-item">
+                          <div>${file.name}</div>
+                          <div id="${file.name}-percent">${percent}%</div>
+                          <div onclick="abortOrContinueUpload('${file.name}')" style="cursor: pointer">中止</div>
+                        </div>`
+      document.getElementById('progress').append(node)
+      xhrSend(0, chunks, file)
+    }
+
+    function xhrSend(index, chunks, file) {
+      let formData = new FormData()
+      formData.append('file-data', chunks[index], file.name)
+      formData.append('meta-data', `${index}`)
+      let xhr = new XMLHttpRequest()
+      memoryStatus[file.name].index = index
+      xhr.open('POST', '/api/upload')
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (!memoryStatus[file.name].flag) {
+            memoryStatus[file.name].index = index + 1
+            console.log('pause')
+            return
+          }
+          if (index + 1 < chunks.length) {
+            xhrSend(index + 1, chunks, file)
+          } else {
+            document.getElementById('progress').removeChild(document.getElementById(file.name))
+            let xhrMerge =new XMLHttpRequest()
+            xhrMerge.open('GET', `/api/merge/${file.name}/${chunks.length}`)
+            xhrMerge.send()
+          }
+        }
+      }
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          let percent = (index * uploadSliceSize + e.loaded) / file.size * 100
+          document.getElementById(`${file.name}-percent`).innerText = `${percent.toFixed(2)}%`
+        }
+      }
+      xhr.onerror = () => {
+        memoryStatus[file.name].index = index
+        abortOrContinueUpload(file.name)
+      }
+      xhr.send(formData)
+    }
+
     window.onload = () => {
       let isUpload = true
       document.getElementById("upload").addEventListener("change", (event) => {
         let files = event.currentTarget.files, totalBytes = 0
         for (let i = 0; i < files.length; i++) totalBytes += files[i].size
-        // isUpload = totalBytes <= 60 * 1024 * 1024
-        if (!isUpload) alert("文件大小超过60")
       })
       document.getElementById("uploadBtn").addEventListener("click", () => {
-        if (!isUpload) {
-          alert("文件大小超过60M")
-        } else {
-          let files = document.getElementById("upload").files,
-            formData = new FormData(),
-            xhr = new XMLHttpRequest()
-          for (let i = 0; i < files.length; i++) formData.append('file', files[i])
-          xhr.open('POST', '/api/upload')
-          xhr.onerror = (event) => {
-            //set a timeout and retry
-          }
-          xhr.onabort = () => {
-          }
-          xhr.onreadystatechange = () => {
-            if (xhr.readyState === 4)
-              console.log(xhr.response)
-          }
-          xhr.onloadend = (event) => {
-            document.getElementById('progress').style.display = 'none'
-          }
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) {
-              //during upload process, you can call function xhr.abort() to end upload
-              let percent = event.loaded / event.total * 100
-              let pro = document.getElementById('progress')
-              pro.style.display = ''
-              pro.innerText = `${percent}%`
-            }
-          }
-          xhr.send(formData)
+        let files = document.getElementById("upload").files
+        document.getElementById('progress').style.display = ''
+        for (let i = 0; i < files.length; i++) {
+          memoryStatus[files[i].name] = {}
+          uploadFile(files[i])
         }
       })
     }
   </script>
+  <style type="text/css">
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      font-family: "Helvetica",serif;
+    }
+    .container {
+      margin-top: 15vh;
+      height: 100vh;
+      width: 100vw;
+      overflow: scroll;
+      display: flex;
+      flex-flow: column;
+      align-items: center;
+    }
+    .progress-container {
+      border: solid 3px black;
+      border-radius: 10px;
+      width: 60vw;
+      display: flex;
+      flex-flow: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .progress-item {
+      width: 100%;
+      display: flex;
+    }
+
+    .progress-item :nth-child(1) {
+      background-color: green;
+      width: 50%;
+    }
+    .progress-item :nth-child(2) {
+      background-color: red;
+      width: 35%;
+    }
+    .progress-item :nth-child(3) {
+      background-color: yellow;
+      width: 15%;
+    }
+    .upload-btn {
+      cursor: pointer;
+      margin: 10px;
+      border: 3px solid black;
+      border-radius: 10px;
+      width: 60px;
+      padding: 10px;
+      display: flex;
+      flex-flow: row;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
 </html>
