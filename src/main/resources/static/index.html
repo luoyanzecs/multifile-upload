@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>文件上传</title>
+  </head>
+  <body>
+    <input id="upload" type="file" multiple="multiple"/>
+    <div id="uploadBtn">upload</div>
+    <div id="progress" style="display: none">0%</div>
+  </body>
+  <script>
+    window.onload = () => {
+      let isUpload = true
+      document.getElementById("upload").addEventListener("change", (event) => {
+        let files = event.currentTarget.files, totalBytes = 0
+        for (let i = 0; i < files.length; i++) totalBytes += files[i].size
+        // isUpload = totalBytes <= 60 * 1024 * 1024
+        if (!isUpload) alert("文件大小超过60")
+      })
+      document.getElementById("uploadBtn").addEventListener("click", () => {
+        if (!isUpload) {
+          alert("文件大小超过60M")
+        } else {
+          let files = document.getElementById("upload").files,
+            formData = new FormData(),
+            xhr = new XMLHttpRequest()
+          for (let i = 0; i < files.length; i++) formData.append('file', files[i])
+          xhr.open('POST', '/api/upload')
+          xhr.onerror = (event) => {
+            //set a timeout and retry
+          }
+          xhr.onabort = () => {
+          }
+          xhr.onreadystatechange = () => {
+            if (xhr.readyState === 4)
+              console.log(xhr.response)
+          }
+          xhr.onloadend = (event) => {
+            document.getElementById('progress').style.display = 'none'
+          }
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              //during upload process, you can call function xhr.abort() to end upload
+              let percent = event.loaded / event.total * 100
+              let pro = document.getElementById('progress')
+              pro.style.display = ''
+              pro.innerText = `${percent}%`
+            }
+          }
+          xhr.send(formData)
+        }
+      })
+    }
+  </script>
+</html>
