@@ -7,37 +7,93 @@
   <body>
     <div class="container">
       <input id="upload" type="file" multiple="multiple"/>
-      <div id="uploadBtn" class="upload-btn">upload</div>
-      <div style="border-bottom: 1px solid grey; width: 60vw; margin-bottom: 10px"></div>
-      <div id="progress" class="progress-container" style="display: none"></div>
+      <div id="uploadBtn" class="upload-btn" style="pointer-events: none">upload</div>
+      <div id="noticeInfo" style="color: grey">请选择文件</div>
+      <hr style="width: 63vw;"/>
+      <div id="progress" class="progress-container"></div>
     </div>
   </body>
   <script>
-    const uploadSliceSize = 2 * 1024 * 1024
+    const uploadSliceSize = 512 * 1024
+    const limitFileSize = 60 * 1024 * 1024
     /**
-     *{filename : {
+     *[filename : {
      *            index: memory interrupt index of file
      *            chunks: memory chunks for each file
      *            file: memory file object
      *            flag: memory pause(false) or uploading(true)
-     *            }}
+     *            xhr: XMLHttpRequest
+     *            }]
      * */
-
-    const memoryStatus = {}
+    const memoryStatus = []
 
     function abortOrContinueUpload(filename) {
-      if (memoryStatus[filename].flag) {
-        console.log(this.currentTarget)
-        document.getElementById(`${filename}-status`).innerText = '继续'
-      } else {
-        xhrSend(memoryStatus[filename].index, memoryStatus[filename].chunks, memoryStatus[filename].file)
-        document.getElementById(`${filename}-status`).innerText = '中止'
-      }
+      !memoryStatus[filename].flag && xhrSend(filename)
+      document.getElementById(`${filename}-status`).innerText = memoryStatus[filename].flag ? '继续' : '中止'
       memoryStatus[filename].flag = !memoryStatus[filename].flag
     }
 
+    function checkUploadStatus(filename) {
+      let xhr = new XMLHttpRequest()
+      xhr.open('GET', `/api/check/${filename}/${memoryStatus[filename].file.size}`)
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (xhr.responseText === 'OK') {
+            //TODO:
+          } else {
+            alert(`${filename} ${xhr.responseText}`)
+          }
+        }
+      }
+      xhr.send()
+    }
+
+    function addXMLHttpRequestListeners(filename) {
+      let xhr = memoryStatus[filename].xhr
+      xhr.onreadystatechange = () => {
+        if (xhr.readyState === 4) {
+          if (!memoryStatus[filename].flag) {
+            memoryStatus[filename].index = memoryStatus[filename].index + 1
+            return
+          }
+          if (memoryStatus[filename].index + 1 < memoryStatus[filename].chunks.length) {
+            memoryStatus[filename].index = memoryStatus[filename].index + 1
+            xhrSend(filename)
+          } else {
+            document.getElementById(filename).parentNode.removeChild(document.getElementById(filename))
+            checkUploadStatus(filename)
+          }
+        }
+      }
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          let percent = (memoryStatus[filename].index * uploadSliceSize + e.loaded) / memoryStatus[filename].file.size * 100
+          percent = percent >= 100 ? 100 : percent
+          document.getElementById(`${filename}-percent`).innerText = `${percent.toFixed(2)}%`
+        }
+      }
+      xhr.onerror = () => {
+        abortOrContinueUpload(filename)
+      }
+    }
+
+    function addProgressItem(filename) {
+      let node = document.createElement('div')
+      node.setAttribute('id', filename)
+      node.setAttribute('class', 'progress-item')
+      node.innerHTML = `<div class="progress-item-1">${filename}</div>
+                        <div id="${filename}-percent" class="progress-item-2">0</div>
+                        <div id="${filename}-status"
+                             class="progress-item-3"
+                             onclick="abortOrContinueUpload('${filename}')">
+                             准备上传
+                        </div>
+                       `
+      document.getElementById('progress').append(node)
+    }
+
     function uploadFile(file) {
-      let start = 0, size = file.size, chunks = [], percent = 0
+      let start = 0, size = file.size, chunks = []
       while (start < size) {
         let fileSlice = start + uploadSliceSize <= size ? file.slice(start, start + uploadSliceSize) : file.slice(start, size)
         chunks.push(fileSlice)
@@ -46,72 +102,50 @@
       memoryStatus[file.name].chunks = chunks
       memoryStatus[file.name].file = file
       memoryStatus[file.name].flag = true
-      let node = document.createElement('div')
-      node.setAttribute('id', file.name)
-      node.setAttribute('class', 'progress-item')
-      node.innerHTML = `<div class="progress-item-1">${file.name}</div>
-                        <div id="${file.name}-percent" class="progress-item-2">${percent}%</div>
-                        <div id="${file.name}-status"
-                             class="progress-item-3"
-                             onclick="abortOrContinueUpload('${file.name}')">
-                             中止
-                        </div>
-                       `
-      document.getElementById('progress').append(node)
-      xhrSend(0, chunks, file)
+      memoryStatus[file.name].index = 0
+      memoryStatus[file.name].xhr = new XMLHttpRequest()
+
+      addXMLHttpRequestListeners(file.name)
+      xhrSend(file.name)
+      document.getElementById(`${file.name}-status`).innerText = '暂停'
     }
 
-    function xhrSend(index, chunks, file) {
+    function xhrSend(filename) {
       let formData = new FormData()
-      formData.append('file-data', chunks[index], file.name)
-      formData.append('meta-data', `${index}`)
-      let xhr = new XMLHttpRequest()
-      memoryStatus[file.name].index = index
-      xhr.open('POST', '/api/upload')
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState === 4) {
-          if (!memoryStatus[file.name].flag) {
-            memoryStatus[file.name].index = index + 1
-            return
-          }
-          if (index + 1 < chunks.length) {
-            xhrSend(index + 1, chunks, file)
-          } else {
-            let node = document.getElementById(file.name)
-            node.parentNode.removeChild(node)
-            let xhrMerge = new XMLHttpRequest()
-            xhrMerge.open('GET', `/api/merge/${file.name}/${chunks.length}`)
-            xhrMerge.send()
-          }
-        }
-      }
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          let percent = (index * uploadSliceSize + e.loaded) / file.size * 100
-          percent = percent >= 100 ? 100 : percent
-          document.getElementById(`${file.name}-percent`).innerText = `${percent.toFixed(2)}%`
-        }
-      }
-      xhr.onerror = () => {
-        memoryStatus[file.name].index = index
-        abortOrContinueUpload(file.name)
-        console.log("upload error")
-      }
-      xhr.send(formData)
+      formData.append('file-data', memoryStatus[filename].chunks[memoryStatus[filename].index], filename)
+      formData.append('meta-data', `${memoryStatus[filename].index}`)
+      memoryStatus[filename].xhr.open('POST', '/api/upload')
+      memoryStatus[filename].xhr.send(formData)
     }
 
     window.onload = () => {
       document.getElementById("upload").addEventListener("change", (event) => {
         let files = event.currentTarget.files, totalBytes = 0
-        for (let i = 0; i < files.length; i++) totalBytes += files[i].size
+        document.getElementById('progress').innerText = ''
+        for (let i = 0; i < files.length; i++) {
+          addProgressItem(files[i].name)
+          totalBytes += files[i].size
+        }
+
+        if (totalBytes > limitFileSize) {
+          document.getElementById('noticeInfo').innerText = '文件大小超过60M'
+          document.getElementById('uploadBtn').style.pointerEvents = 'none'
+        } else if (totalBytes === 0){
+          document.getElementById('noticeInfo').innerText = '请选择文件'
+          document.getElementById('uploadBtn').style.pointerEvents = 'none'
+        } else {
+          document.getElementById('noticeInfo').innerText = '点击按钮上传文件'
+          document.getElementById('uploadBtn').style.pointerEvents = null
+        }
+
       })
       document.getElementById("uploadBtn").addEventListener("click", () => {
         let files = document.getElementById("upload").files
-        document.getElementById('progress').style.display = ''
         for (let i = 0; i < files.length; i++) {
           memoryStatus[files[i].name] = {}
           uploadFile(files[i])
         }
+        document.getElementById('uploadBtn').style.pointerEvents = 'none'
       })
     }
   </script>
@@ -122,7 +156,6 @@
       padding: 0;
       font-family: "Helvetica", serif;
     }
-
     input {
       border: solid 2px grey;
       outline: none;
@@ -131,7 +164,6 @@
       font-size: 1.2rem;
       text-align: center;
     }
-
     .container {
       margin-top: 15vh;
       height: 100vh;
@@ -141,12 +173,10 @@
       flex-flow: column;
       align-items: center;
     }
-
     .progress-container {
       border-radius: 10px;
       width: 60vw;
     }
-
     .progress-item {
       width: 100%;
       display: flex;
@@ -154,20 +184,18 @@
       align-items: center;
       margin-bottom: 5px;
     }
-
     .progress-item-1 {
       width: 75%;
     }
-
     .progress-item-2 {
       width: 15%;
+      text-align: right;
     }
-
     .progress-item-3 {
       width: 15%;
       cursor: pointer;
+      text-align: right;
     }
-
     .upload-btn {
       cursor: pointer;
       margin: 10px;
@@ -180,5 +208,6 @@
       justify-content: center;
       align-items: center;
     }
+
   </style>
 </html>

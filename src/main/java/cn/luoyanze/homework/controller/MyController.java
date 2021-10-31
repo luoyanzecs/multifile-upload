@@ -1,34 +1,48 @@
 package cn.luoyanze.homework.controller;
 
-import org.springframework.stereotype.Controller;
+import cn.luoyanze.homework.Config.PathConfig;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.Part;
+import java.io.File;
 import java.io.IOException;
-import java.net.http.HttpResponse;
-import java.util.Collection;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api")
 public class MyController {
 
+
     @PostMapping("/upload")
     public String upload(@RequestPart("meta-data") String metadata,
-                         @RequestPart("file-data") MultipartFile file) {
-        System.out.println(file.getOriginalFilename());
-        System.out.println("metadata = " + metadata);
+                         @RequestPart("file-data") MultipartFile file) throws IOException {
+
+        Path rootLocation = Paths.get(PathConfig.UPLOAD_DIR);
+        if (Files.notExists(rootLocation)) {
+            Files.createDirectories(rootLocation);
+        }
+        Path path = rootLocation.resolve(Objects.requireNonNull(file.getOriginalFilename()));
+        if ("0".equals(metadata)) {
+            Files.write(path, file.getBytes());
+        } else {
+            Files.write(path, file.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+        }
         return "OK";
     }
 
-    @GetMapping("/merge/{filename}/{slice}")
-    public String merge(@PathVariable("filename") String filename,
-                        @PathVariable("slice") Integer slice) {
-        System.out.println("               " + filename);
-        System.out.println("               " + slice);
-        return "OK";
+    @GetMapping("/check/{filename}/{size}")
+    public String check(@PathVariable("filename") String filename,
+                        @PathVariable("size") long size) {
+
+        Path path = Paths.get(PathConfig.UPLOAD_DIR + File.separator + filename);
+        if (path.toFile().length() == size) {
+            return "OK";
+        } else {
+            return "file upload failed";
+        }
     }
 }
