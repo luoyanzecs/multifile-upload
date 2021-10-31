@@ -8,6 +8,7 @@
     <div class="container">
       <input id="upload" type="file" multiple="multiple"/>
       <div id="uploadBtn" class="upload-btn">upload</div>
+      <div style="border-bottom: 1px solid grey; width: 60vw; margin-bottom: 10px"></div>
       <div id="progress" class="progress-container" style="display: none"></div>
     </div>
   </body>
@@ -27,10 +28,10 @@
     function abortOrContinueUpload(filename) {
       if (memoryStatus[filename].flag) {
         console.log(this.currentTarget)
-        // this.currentTarget.innerText = '继续'
+        document.getElementById(`${filename}-status`).innerText = '继续'
       } else {
         xhrSend(memoryStatus[filename].index, memoryStatus[filename].chunks, memoryStatus[filename].file)
-        // this.currentTarget.innerText = '中止'
+        document.getElementById(`${filename}-status`).innerText = '中止'
       }
       memoryStatus[filename].flag = !memoryStatus[filename].flag
     }
@@ -46,11 +47,16 @@
       memoryStatus[file.name].file = file
       memoryStatus[file.name].flag = true
       let node = document.createElement('div')
-      node.innerHTML = `<div id="${file.name}" class="progress-item">
-                          <div>${file.name}</div>
-                          <div id="${file.name}-percent">${percent}%</div>
-                          <div onclick="abortOrContinueUpload('${file.name}')" style="cursor: pointer">中止</div>
-                        </div>`
+      node.setAttribute('id', file.name)
+      node.setAttribute('class', 'progress-item')
+      node.innerHTML = `<div class="progress-item-1">${file.name}</div>
+                        <div id="${file.name}-percent" class="progress-item-2">${percent}%</div>
+                        <div id="${file.name}-status"
+                             class="progress-item-3"
+                             onclick="abortOrContinueUpload('${file.name}')">
+                             中止
+                        </div>
+                       `
       document.getElementById('progress').append(node)
       xhrSend(0, chunks, file)
     }
@@ -66,14 +72,14 @@
         if (xhr.readyState === 4) {
           if (!memoryStatus[file.name].flag) {
             memoryStatus[file.name].index = index + 1
-            console.log('pause')
             return
           }
           if (index + 1 < chunks.length) {
             xhrSend(index + 1, chunks, file)
           } else {
-            document.getElementById('progress').removeChild(document.getElementById(file.name))
-            let xhrMerge =new XMLHttpRequest()
+            let node = document.getElementById(file.name)
+            node.parentNode.removeChild(node)
+            let xhrMerge = new XMLHttpRequest()
             xhrMerge.open('GET', `/api/merge/${file.name}/${chunks.length}`)
             xhrMerge.send()
           }
@@ -82,18 +88,19 @@
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           let percent = (index * uploadSliceSize + e.loaded) / file.size * 100
+          percent = percent >= 100 ? 100 : percent
           document.getElementById(`${file.name}-percent`).innerText = `${percent.toFixed(2)}%`
         }
       }
       xhr.onerror = () => {
         memoryStatus[file.name].index = index
         abortOrContinueUpload(file.name)
+        console.log("upload error")
       }
       xhr.send(formData)
     }
 
     window.onload = () => {
-      let isUpload = true
       document.getElementById("upload").addEventListener("change", (event) => {
         let files = event.currentTarget.files, totalBytes = 0
         for (let i = 0; i < files.length; i++) totalBytes += files[i].size
@@ -113,8 +120,18 @@
     html {
       margin: 0;
       padding: 0;
-      font-family: "Helvetica",serif;
+      font-family: "Helvetica", serif;
     }
+
+    input {
+      border: solid 2px grey;
+      outline: none;
+      margin: 1rem;
+      border-radius: 4px;
+      font-size: 1.2rem;
+      text-align: center;
+    }
+
     .container {
       margin-top: 15vh;
       height: 100vh;
@@ -124,32 +141,33 @@
       flex-flow: column;
       align-items: center;
     }
+
     .progress-container {
-      border: solid 3px black;
       border-radius: 10px;
       width: 60vw;
-      display: flex;
-      flex-flow: column;
-      justify-content: center;
-      align-items: center;
     }
+
     .progress-item {
       width: 100%;
       display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 5px;
     }
 
-    .progress-item :nth-child(1) {
-      background-color: green;
-      width: 50%;
+    .progress-item-1 {
+      width: 75%;
     }
-    .progress-item :nth-child(2) {
-      background-color: red;
-      width: 35%;
-    }
-    .progress-item :nth-child(3) {
-      background-color: yellow;
+
+    .progress-item-2 {
       width: 15%;
     }
+
+    .progress-item-3 {
+      width: 15%;
+      cursor: pointer;
+    }
+
     .upload-btn {
       cursor: pointer;
       margin: 10px;
